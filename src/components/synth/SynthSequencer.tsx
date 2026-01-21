@@ -1,0 +1,116 @@
+import { memo, useCallback } from 'react';
+import { useSynthStore, midiNoteToName, useTransportStore } from '../../store';
+import { useAudioEngine } from '../../hooks/useAudioEngine';
+
+interface SynthSequencerProps {
+  synthIndex: number;
+}
+
+// Piano roll notes (2 octaves)
+const NOTES = [
+  72, 71, 70, 69, 68, 67, 66, 65, 64, 63, 62, 61, 60, 59, 58, 57, 56, 55, 54, 53, 52, 51, 50, 49, 48,
+]; // C5 down to C3
+
+export const SynthSequencer = memo(function SynthSequencer({ synthIndex }: SynthSequencerProps) {
+  const { patterns, toggleNote } = useSynthStore();
+  const { currentStep, state } = useTransportStore();
+  const { triggerSynthNote, initialize } = useAudioEngine();
+  const pattern = patterns[synthIndex];
+  const isPlaying = state === 'playing';
+
+  const handleCellClick = useCallback(
+    async (stepIndex: number, note: number) => {
+      await initialize();
+      const stepData = pattern.steps[stepIndex];
+      const notes = stepData.notes || [];
+      const isNoteActive = notes.includes(note);
+
+      // Toggle the note (add or remove)
+      toggleNote(synthIndex, stepIndex, note);
+
+      // Play sound when adding a note
+      if (!isNoteActive) {
+        triggerSynthNote(synthIndex, note, 100);
+      }
+    },
+    [synthIndex, pattern.steps, toggleNote, triggerSynthNote, initialize]
+  );
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="inline-block min-w-full">
+        {/* Step numbers header */}
+        <div className="flex">
+          <div className="w-12 min-w-[48px]" /> {/* Spacer for note labels */}
+          <div className="flex">
+            {Array.from({ length: 16 }, (_, i) => (
+              <div
+                key={i}
+                className={`w-8 min-w-[32px] text-center text-xs font-mono ${
+                  i % 4 === 0 ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-secondary)]'
+                } ${isPlaying && currentStep === i ? 'text-[var(--color-accent)] font-bold' : ''}`}
+              >
+                {i + 1}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Piano roll grid */}
+        <div className="flex flex-col">
+          {NOTES.map((note) => {
+            const noteName = midiNoteToName(note);
+            const isBlackKey = noteName.includes('#');
+
+            return (
+              <div key={note} className="flex">
+                {/* Note label */}
+                <div
+                  className={`w-12 min-w-[48px] h-5 flex items-center justify-end pr-1 text-xs font-mono ${
+                    isBlackKey
+                      ? 'bg-[var(--color-bg-primary)] text-[var(--color-text-secondary)]'
+                      : 'bg-[var(--color-bg-secondary)] text-[var(--color-text-primary)]'
+                  }`}
+                >
+                  {noteName}
+                </div>
+
+                {/* Step cells */}
+                <div className="flex">
+                  {Array.from({ length: 16 }, (_, stepIndex) => {
+                    const stepData = pattern.steps[stepIndex];
+                    const notes = stepData.notes || [];
+                    const isActive = notes.includes(note);
+                    const isBeatStart = stepIndex % 4 === 0;
+                    const isCurrentStep = isPlaying && currentStep === stepIndex;
+
+                    return (
+                      <button
+                        key={stepIndex}
+                        onClick={() => handleCellClick(stepIndex, note)}
+                        className={`w-8 min-w-[32px] h-5 border-r border-b transition-colors ${
+                          isBlackKey ? 'border-[var(--color-bg-tertiary)]' : 'border-[var(--color-bg-primary)]'
+                        } ${
+                          isActive
+                            ? 'bg-[var(--color-accent)]'
+                            : isBeatStart
+                            ? isBlackKey
+                              ? 'bg-[var(--color-bg-primary)]'
+                              : 'bg-[var(--color-bg-tertiary)]'
+                            : isBlackKey
+                            ? 'bg-[var(--color-bg-primary)] bg-opacity-50'
+                            : 'bg-[var(--color-bg-secondary)]'
+                        } ${isCurrentStep ? 'ring-1 ring-inset ring-[var(--color-step-current)]' : ''} hover:bg-[var(--color-accent)] hover:bg-opacity-30`}
+                        aria-label={`Step ${stepIndex + 1}, Note ${noteName}`}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+});

@@ -1,0 +1,10 @@
+export { KickSynth } from './KickSynth';
+export { SnareSynth } from './SnareSynth';
+export { HiHatSynth } from './HiHatSynth';
+export { ClapSynth } from './ClapSynth';
+export { TomSynth } from './TomSynth';
+export { RimSynth } from './RimSynth';
+export { CowbellSynth } from './CowbellSynth';
+export { CymbalSynth } from './CymbalSynth';
+export { CongaSynth } from './CongaSynth';
+export { SynthVoice } from './SynthVoice';
