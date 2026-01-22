@@ -7,20 +7,17 @@ import { DrumControls } from './components/drums/DrumControls';
 import { SynthSection } from './components/synth/SynthSection';
 import { ArrangementView } from './components/arrangement/ArrangementView';
 import { AudioUnlockOverlay } from './components/AudioUnlockOverlay';
-import { useAudioEngine } from './hooks/useAudioEngine';
-import { audioEngine } from './audio/engine/AudioEngine';
+import { useProjectStore } from './store';
 
 function App() {
-  const { initialize } = useAudioEngine();
   const [showOverlay, setShowOverlay] = useState(true);
+  const setInitialized = useProjectStore((s) => s.setInitialized);
 
   const handleAudioUnlock = useCallback(() => {
-    // The overlay already unlocked audio with a temporary context
-    // Now unlock with our main engine and initialize
-    audioEngine.unlockAudio();
-    initialize();
+    // Audio is already initialized by the overlay
+    setInitialized(true);
     setShowOverlay(false);
-  }, [initialize]);
+  }, [setInitialized]);
 
   return (
     <>
