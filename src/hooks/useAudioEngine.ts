@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef, useState } from 'react';
 import { audioEngine } from '../audio/engine/AudioEngine';
-import { useTransportStore, usePatternStore, useProjectStore, useSynthStore } from '../store';
+import { useTransportStore, usePatternStore, useProjectStore, useSynthStore, useDrumStore } from '../store';
 import type { Step } from '../types';
 
 export function useAudioEngine() {
@@ -8,6 +8,7 @@ export function useAudioEngine() {
   const { patterns, currentPatternId } = usePatternStore();
   const { masterVolume, isInitialized, setInitialized } = useProjectStore();
   const { synths, patterns: synthPatterns, synthsEnabled } = useSynthStore();
+  const { params: drumParams } = useDrumStore();
   const isPlayingRef = useRef(false);
   const [isRecording, setIsRecording] = useState(false);
 
@@ -55,6 +56,11 @@ export function useAudioEngine() {
   useEffect(() => {
     audioEngine.setSynthsEnabled(synthsEnabled);
   }, [synthsEnabled]);
+
+  // Sync drum params with audio engine
+  useEffect(() => {
+    audioEngine.applyAllDrumParams(drumParams);
+  }, [drumParams]);
 
   // Sync synth settings with audio engine
   useEffect(() => {
@@ -124,21 +130,29 @@ export function useAudioEngine() {
 
   // Start recording
   const startRecording = useCallback(async () => {
+    console.log('startRecording called');
     await initialize();
     await audioEngine.ensureResumed();
     audioEngine.startRecording();
+    setIsRecording(true);
+    console.log('Recording state set to true');
   }, [initialize]);
 
   // Stop recording and get WAV blob
   const stopRecording = useCallback(async (): Promise<Blob | null> => {
+    console.log('stopRecording called');
     const blob = await audioEngine.stopRecording();
+    setIsRecording(false);
+    console.log('Recording state set to false, blob:', blob);
     return blob;
   }, []);
 
   // Stop recording and trigger download
   const stopRecordingAndDownload = useCallback(async () => {
+    console.log('stopRecordingAndDownload called');
     const blob = await stopRecording();
     if (blob) {
+      console.log('Triggering download for blob size:', blob.size);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -147,6 +161,8 @@ export function useAudioEngine() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+    } else {
+      console.log('No blob to download');
     }
   }, [stopRecording]);
 

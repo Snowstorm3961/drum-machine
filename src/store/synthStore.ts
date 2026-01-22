@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { SynthSettings, SynthPattern, Step, OscillatorSettings, EnvelopeSettings, FilterSettings } from '../types';
+import type { SynthSettings, SynthPattern, Step, OscillatorSettings, EnvelopeSettings, FilterSettings, FilterEnvelopeSettings } from '../types';
 
 const STEPS_PER_PATTERN = 16;
 
@@ -29,6 +29,15 @@ const defaultFilter: FilterSettings = {
   enabled: true,
 };
 
+// Default filter envelope
+const defaultFilterEnvelope: FilterEnvelopeSettings = {
+  attack: 0.01,
+  decay: 0.3,
+  sustain: 0.3,
+  release: 0.3,
+  amount: 0.5, // positive = envelope opens filter, negative = envelope closes filter
+};
+
 // Create default synth settings
 const createDefaultSynthSettings = (id: string, name: string): SynthSettings => ({
   id,
@@ -40,6 +49,7 @@ const createDefaultSynthSettings = (id: string, name: string): SynthSettings => 
   ],
   envelope: { ...defaultEnvelope },
   filter: { ...defaultFilter },
+  filterEnvelope: { ...defaultFilterEnvelope },
   volume: 0.5,
 });
 
@@ -93,6 +103,7 @@ interface SynthStore {
   updateSynthOscillator: (synthIndex: number, oscIndex: number, settings: Partial<OscillatorSettings>) => void;
   updateSynthEnvelope: (synthIndex: number, settings: Partial<EnvelopeSettings>) => void;
   updateSynthFilter: (synthIndex: number, settings: Partial<FilterSettings>) => void;
+  updateSynthFilterEnvelope: (synthIndex: number, settings: Partial<FilterEnvelopeSettings>) => void;
   updateSynthVolume: (synthIndex: number, volume: number) => void;
   updateSynthName: (synthIndex: number, name: string) => void;
 
@@ -151,6 +162,16 @@ export const useSynthStore = create<SynthStore>((set, get) => ({
       newSynths[synthIndex] = {
         ...newSynths[synthIndex],
         filter: { ...newSynths[synthIndex].filter, ...settings },
+      };
+      return { synths: newSynths };
+    }),
+
+  updateSynthFilterEnvelope: (synthIndex, settings) =>
+    set((state) => {
+      const newSynths = [...state.synths] as [SynthSettings, SynthSettings, SynthSettings];
+      newSynths[synthIndex] = {
+        ...newSynths[synthIndex],
+        filterEnvelope: { ...newSynths[synthIndex].filterEnvelope, ...settings },
       };
       return { synths: newSynths };
     }),

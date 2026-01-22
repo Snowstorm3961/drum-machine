@@ -1,4 +1,4 @@
-import type { OscillatorSettings, EnvelopeSettings, FilterSettings } from '../../types';
+import type { OscillatorSettings, EnvelopeSettings, FilterSettings, FilterEnvelopeSettings } from '../../types';
 
 export class SynthVoice {
   private audioContext: AudioContext;
@@ -44,7 +44,8 @@ export class SynthVoice {
     time: number,
     oscSettings: OscillatorSettings[],
     envSettings: EnvelopeSettings,
-    filterSettings: FilterSettings
+    filterSettings: FilterSettings,
+    filterEnvSettings?: FilterEnvelopeSettings
   ): void {
     // Cancel any pending release
     if (this.releaseTimeout !== null) {
@@ -59,12 +60,32 @@ export class SynthVoice {
     this.isPlaying = true;
 
     const vel = velocity / 127;
+    const now = time;
 
     // Update filter
     if (filterSettings.enabled) {
       this.filter.type = filterSettings.type;
-      this.filter.frequency.setValueAtTime(filterSettings.frequency, time);
-      this.filter.Q.setValueAtTime(filterSettings.resonance, time);
+      this.filter.Q.setValueAtTime(filterSettings.resonance, now);
+
+      // Apply filter envelope if provided
+      if (filterEnvSettings && Math.abs(filterEnvSettings.amount) > 0.01) {
+        const baseFreq = filterSettings.frequency;
+        // Calculate envelope range - amount determines how much the envelope modulates
+        // Positive amount: envelope opens filter (low to high)
+        // Negative amount: envelope closes filter (high to low)
+        const envRange = filterEnvSettings.amount * 10000; // Scale amount to frequency range
+        const startFreq = Math.max(20, Math.min(20000, baseFreq - envRange * (filterEnvSettings.amount > 0 ? 1 : 0)));
+        const peakFreq = Math.max(20, Math.min(20000, baseFreq + envRange * (filterEnvSettings.amount > 0 ? 1 : 0)));
+        const sustainFreq = startFreq + (peakFreq - startFreq) * filterEnvSettings.sustain;
+
+        this.filter.frequency.cancelScheduledValues(now);
+        this.filter.frequency.setValueAtTime(startFreq, now);
+        this.filter.frequency.linearRampToValueAtTime(peakFreq, now + filterEnvSettings.attack);
+        this.filter.frequency.linearRampToValueAtTime(sustainFreq, now + filterEnvSettings.attack + filterEnvSettings.decay);
+      } else {
+        this.filter.frequency.cancelScheduledValues(now);
+        this.filter.frequency.setValueAtTime(filterSettings.frequency, now);
+      }
     } else {
       this.filter.type = 'allpass';
     }
@@ -77,26 +98,25 @@ export class SynthVoice {
       osc.type = settings.waveform;
       osc.frequency.setValueAtTime(
         this.midiToFrequency(note, settings.coarse, settings.fine),
-        time
+        now
       );
 
       // Apply phase offset by starting slightly later
       const phaseOffset = (settings.phase / 360) * (1 / this.midiToFrequency(note, settings.coarse, settings.fine));
 
       const oscGain = this.audioContext.createGain();
-      oscGain.gain.setValueAtTime(settings.volume, time);
+      oscGain.gain.setValueAtTime(settings.volume, now);
 
       osc.connect(oscGain);
       oscGain.connect(this.envelope);
 
-      osc.start(time + phaseOffset);
+      osc.start(now + phaseOffset);
 
       this.oscillators.push(osc);
       this.oscillatorGains.push(oscGain);
     });
 
     // Apply ADSR envelope
-    const now = time;
     this.envelope.gain.cancelScheduledValues(now);
     this.envelope.gain.setValueAtTime(0, now);
     this.envelope.gain.linearRampToValueAtTime(vel, now + envSettings.attack);
@@ -106,7 +126,7 @@ export class SynthVoice {
     );
   }
 
-  noteOff(time: number, envSettings: EnvelopeSettings): void {
+  noteOff(time: number, envSettings: EnvelopeSettings, filterEnvSettings?: FilterEnvelopeSettings): void {
     if (!this.isPlaying) return;
 
     const now = time;
@@ -115,6 +135,19 @@ export class SynthVoice {
     this.envelope.gain.cancelScheduledValues(now);
     this.envelope.gain.setValueAtTime(currentGain, now);
     this.envelope.gain.linearRampToValueAtTime(0, now + envSettings.release);
+
+    // Apply filter envelope release if provided
+    if (filterEnvSettings && Math.abs(filterEnvSettings.amount) > 0.01) {
+      const currentFilterFreq = this.filter.frequency.value;
+      this.filter.frequency.cancelScheduledValues(now);
+      this.filter.frequency.setValueAtTime(currentFilterFreq, now);
+      // Return to base frequency during release
+      const baseFreq = filterEnvSettings.amount > 0 ? 20 : 20000;
+      this.filter.frequency.linearRampToValueAtTime(
+        Math.max(20, Math.min(20000, baseFreq)),
+        now + filterEnvSettings.release
+      );
+    }
 
     // Schedule oscillator stop after release
     const releaseMs = envSettings.release * 1000 + 50;

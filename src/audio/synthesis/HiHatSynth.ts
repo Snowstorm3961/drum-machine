@@ -1,19 +1,31 @@
+import type { HiHatParams } from '../../types';
+
 export class HiHatSynth {
   private audioContext: AudioContext;
   private output: GainNode;
-  private volume: number = 1;
   private isOpen: boolean;
+  private params: HiHatParams = {
+    volume: 1,
+    decay: 1,
+    tone: 0.5,
+  };
 
   constructor(audioContext: AudioContext, isOpen: boolean = false) {
     this.audioContext = audioContext;
     this.isOpen = isOpen;
     this.output = audioContext.createGain();
-    this.output.gain.value = this.volume;
+    this.output.gain.value = this.params.volume;
   }
 
   trigger(time: number, velocity: number = 1): void {
+    const { decay, tone } = this.params;
     const vel = velocity / 127;
-    const decayTime = this.isOpen ? 0.3 : 0.05;
+    const baseDecay = this.isOpen ? 0.3 : 0.05;
+    const decayTime = baseDecay * decay;
+
+    // Calculate filter frequencies based on tone (0 = darker, 1 = brighter)
+    const highpassFreq = 4000 + tone * 6000;
+    const bandpassFreq = 6000 + tone * 8000;
 
     // Primary: filtered white noise
     const noiseBuffer = this.createNoiseBuffer(decayTime + 0.1);
@@ -23,24 +35,22 @@ export class HiHatSynth {
     // High-pass filter to remove low frequencies
     const highpass = this.audioContext.createBiquadFilter();
     highpass.type = 'highpass';
-    highpass.frequency.value = this.isOpen ? 6000 : 8000;
+    highpass.frequency.value = highpassFreq;
     highpass.Q.value = 0.5;
 
     // Band-pass for character
     const bandpass = this.audioContext.createBiquadFilter();
     bandpass.type = 'bandpass';
-    bandpass.frequency.value = this.isOpen ? 8000 : 10000;
+    bandpass.frequency.value = bandpassFreq;
     bandpass.Q.value = 1;
 
     // Main envelope
     const noiseGain = this.audioContext.createGain();
     noiseGain.gain.setValueAtTime(vel * 0.6, time);
     if (this.isOpen) {
-      // Open hat: slower decay
-      noiseGain.gain.exponentialRampToValueAtTime(vel * 0.3, time + 0.05);
+      noiseGain.gain.exponentialRampToValueAtTime(vel * 0.3, time + 0.05 * decay);
       noiseGain.gain.exponentialRampToValueAtTime(0.001, time + decayTime);
     } else {
-      // Closed hat: fast decay
       noiseGain.gain.exponentialRampToValueAtTime(0.001, time + decayTime);
     }
 
@@ -52,25 +62,25 @@ export class HiHatSynth {
     noise.start(time);
     noise.stop(time + decayTime + 0.1);
 
-    // Secondary: very subtle high-frequency tone for slight metallic edge
+    // Secondary: very subtle high-frequency tone for metallic edge
     const osc = this.audioContext.createOscillator();
     osc.type = 'square';
-    osc.frequency.value = 12000;
+    osc.frequency.value = 10000 + tone * 4000;
 
     const oscGain = this.audioContext.createGain();
-    oscGain.gain.setValueAtTime(vel * 0.03, time);
+    oscGain.gain.setValueAtTime(vel * 0.03 * (0.5 + tone * 0.5), time);
     oscGain.gain.exponentialRampToValueAtTime(0.001, time + decayTime * 0.5);
 
     const oscFilter = this.audioContext.createBiquadFilter();
     oscFilter.type = 'highpass';
-    oscFilter.frequency.value = 10000;
+    oscFilter.frequency.value = 8000 + tone * 4000;
 
     osc.connect(oscFilter);
     oscFilter.connect(oscGain);
     oscGain.connect(this.output);
 
     osc.start(time);
-    osc.stop(time + decayTime);
+    osc.stop(time + decayTime + 0.01);
   }
 
   private createNoiseBuffer(duration: number): AudioBuffer {
@@ -85,8 +95,19 @@ export class HiHatSynth {
     return buffer;
   }
 
+  setParams(params: Partial<HiHatParams>): void {
+    this.params = { ...this.params, ...params };
+    if (params.volume !== undefined) {
+      this.output.gain.value = params.volume;
+    }
+  }
+
+  getParams(): HiHatParams {
+    return { ...this.params };
+  }
+
   setVolume(volume: number): void {
-    this.volume = volume;
+    this.params.volume = volume;
     this.output.gain.value = volume;
   }
 

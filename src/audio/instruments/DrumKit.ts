@@ -1,4 +1,4 @@
-import type { IAudioInstrument } from '../../types';
+import type { IAudioInstrument, AllDrumParams } from '../../types';
 import {
   KickSynth,
   SnareSynth,
@@ -25,6 +25,18 @@ export class DrumKit implements IAudioInstrument {
   private audioContext: AudioContext;
   private output: GainNode;
   private synths: Map<string, DrumSynth> = new Map();
+  private synthInstances: {
+    kick: KickSynth;
+    snare: SnareSynth;
+    clap: ClapSynth;
+    closedHat: HiHatSynth;
+    openHat: HiHatSynth;
+    tom: TomSynth;
+    rim: RimSynth;
+    cowbell: CowbellSynth;
+    cymbal: CymbalSynth;
+    conga: CongaSynth;
+  } | null = null;
 
   constructor(audioContext: AudioContext) {
     this.audioContext = audioContext;
@@ -46,6 +58,11 @@ export class DrumKit implements IAudioInstrument {
     const cowbell = new CowbellSynth(this.audioContext);
     const cymbal = new CymbalSynth(this.audioContext);
     const conga = new CongaSynth(this.audioContext);
+
+    // Store typed instances for parameter access
+    this.synthInstances = {
+      kick, snare, clap, closedHat, openHat, tom, rim, cowbell, cymbal, conga
+    };
 
     // Store in map
     this.synths.set('kick', kick);
@@ -98,5 +115,34 @@ export class DrumKit implements IAudioInstrument {
 
   getDrumIds(): string[] {
     return Array.from(this.synths.keys());
+  }
+
+  setDrumParams(drumId: keyof AllDrumParams, params: Record<string, number>): void {
+    if (!this.synthInstances) return;
+    const synth = this.synthInstances[drumId];
+    if (synth && 'setParams' in synth) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (synth as any).setParams(params);
+    }
+  }
+
+  getDrumParams(drumId: keyof AllDrumParams): Record<string, number> | null {
+    if (!this.synthInstances) return null;
+    const synth = this.synthInstances[drumId];
+    if (synth && 'getParams' in synth) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (synth as any).getParams();
+    }
+    return null;
+  }
+
+  applyAllDrumParams(params: Partial<AllDrumParams>): void {
+    (Object.keys(params) as (keyof AllDrumParams)[]).forEach((drumId) => {
+      const drumParams = params[drumId];
+      if (drumParams) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.setDrumParams(drumId, drumParams as any);
+      }
+    });
   }
 }

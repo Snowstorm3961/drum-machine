@@ -36,6 +36,7 @@ export interface SynthSettings {
   oscillators: [OscillatorSettings, OscillatorSettings, OscillatorSettings];
   envelope: EnvelopeSettings;
   filter: FilterSettings;
+  filterEnvelope: FilterEnvelopeSettings;
   volume: number; // 0 to 1
 }
 
@@ -67,6 +68,80 @@ export interface DrumSound {
   name: string;
   shortName: string;
   color: string;
+}
+
+// Drum parameter types for each drum sound
+export interface DrumParams {
+  volume: number; // 0 to 1
+}
+
+export interface KickParams extends DrumParams {
+  pitch: number; // Base frequency multiplier (0.5 to 2)
+  decay: number; // Decay time multiplier (0.5 to 2)
+  tone: number; // Click/punch amount (0 to 1)
+}
+
+export interface SnareParams extends DrumParams {
+  pitch: number; // Body pitch (0.5 to 2)
+  decay: number; // Decay time multiplier (0.5 to 2)
+  snappy: number; // Noise amount (0 to 1)
+}
+
+export interface HiHatParams extends DrumParams {
+  decay: number; // Decay time multiplier (0.5 to 3)
+  tone: number; // Brightness/filter frequency (0 to 1)
+}
+
+export interface ClapParams extends DrumParams {
+  decay: number; // Decay time multiplier (0.5 to 2)
+  tone: number; // Brightness (0 to 1)
+}
+
+export interface TomParams extends DrumParams {
+  pitch: number; // Pitch multiplier (0.5 to 2)
+  decay: number; // Decay time multiplier (0.5 to 2)
+}
+
+export interface CowbellParams extends DrumParams {
+  pitch: number; // Pitch multiplier (0.5 to 2)
+  decay: number; // Decay time multiplier (0.5 to 2)
+}
+
+export interface CymbalParams extends DrumParams {
+  decay: number; // Decay time multiplier (0.5 to 3)
+  tone: number; // Brightness (0 to 1)
+}
+
+export interface RimParams extends DrumParams {
+  pitch: number; // Pitch multiplier (0.5 to 2)
+  decay: number; // Decay time multiplier (0.5 to 2)
+}
+
+export interface CongaParams extends DrumParams {
+  pitch: number; // Pitch multiplier (0.5 to 2)
+  decay: number; // Decay time multiplier (0.5 to 2)
+}
+
+export interface AllDrumParams {
+  kick: KickParams;
+  snare: SnareParams;
+  closedHat: HiHatParams;
+  openHat: HiHatParams;
+  clap: ClapParams;
+  tom: TomParams;
+  cowbell: CowbellParams;
+  cymbal: CymbalParams;
+  rim: RimParams;
+  conga: CongaParams;
+}
+
+// Filter envelope for synth
+export interface FilterEnvelopeSettings {
+  attack: number; // seconds (0 to 2)
+  decay: number; // seconds (0 to 2)
+  sustain: number; // 0 to 1 (multiplier of envelope amount)
+  release: number; // seconds (0 to 4)
+  amount: number; // -1 to 1 (how much envelope affects filter)
 }
 
 export interface Project {

@@ -2,7 +2,7 @@ import { Scheduler } from './Scheduler';
 import { Recorder } from './Recorder';
 import { DrumKit } from '../instruments/DrumKit';
 import { Synth3xOsc } from '../instruments/Synth3xOsc';
-import type { Step, SynthSettings, SynthPattern } from '../../types';
+import type { Step, SynthSettings, SynthPattern, AllDrumParams } from '../../types';
 
 type StepCallback = (step: number) => void;
 type RecordingCallback = (isRecording: boolean) => void;
@@ -71,9 +71,10 @@ export class AudioEngine {
       this.activeNotes.set(`synth-${i + 1}`, []);
     }
 
-    // Create recorder
+    // Create recorder and connect masterGain to its destination
+    // This connection is permanent - audio always flows through for recording
     this.recorder = new Recorder(this.audioContext);
-    this.recorder.connect(this.masterGain);
+    this.masterGain.connect(this.recorder.getDestination());
 
     this.isInitialized = true;
   }
@@ -297,6 +298,15 @@ export class AudioEngine {
 
   getAudioContext(): AudioContext | null {
     return this.audioContext;
+  }
+
+  // Drum parameter methods
+  setDrumParams(drumId: keyof AllDrumParams, params: Record<string, number>): void {
+    this.drumKit?.setDrumParams(drumId, params);
+  }
+
+  applyAllDrumParams(params: Partial<AllDrumParams>): void {
+    this.drumKit?.applyAllDrumParams(params);
   }
 }
 

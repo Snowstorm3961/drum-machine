@@ -1,40 +1,48 @@
+import type { CymbalParams } from '../../types';
+
 export class CymbalSynth {
   private audioContext: AudioContext;
   private output: GainNode;
-  private volume: number = 1;
+  private params: CymbalParams = {
+    volume: 1,
+    decay: 1,
+    tone: 0.5,
+  };
 
   constructor(audioContext: AudioContext) {
     this.audioContext = audioContext;
     this.output = audioContext.createGain();
-    this.output.gain.value = this.volume;
+    this.output.gain.value = this.params.volume;
   }
 
   trigger(time: number, velocity: number = 1): void {
+    const { decay, tone } = this.params;
     const vel = velocity / 127;
-    const decayTime = 1.2;
+    const decayTime = 1.2 * decay;
+
+    // Calculate frequencies based on tone
+    const highpassFreq = 3000 + tone * 3000;
+    const bandpassFreq = 5000 + tone * 5000;
 
     // Primary: filtered white noise with long decay (the "wash")
     const noiseBuffer = this.createNoiseBuffer(decayTime + 0.2);
     const noise = this.audioContext.createBufferSource();
     noise.buffer = noiseBuffer;
 
-    // High-pass to remove mud
     const highpass = this.audioContext.createBiquadFilter();
     highpass.type = 'highpass';
-    highpass.frequency.value = 4000;
+    highpass.frequency.value = highpassFreq;
     highpass.Q.value = 0.3;
 
-    // Gentle band-pass for shimmer character
     const bandpass = this.audioContext.createBiquadFilter();
     bandpass.type = 'bandpass';
-    bandpass.frequency.value = 7000;
+    bandpass.frequency.value = bandpassFreq;
     bandpass.Q.value = 0.5;
 
-    // Noise envelope - fast attack, long decay
     const noiseGain = this.audioContext.createGain();
     noiseGain.gain.setValueAtTime(vel * 0.5, time);
     noiseGain.gain.setValueAtTime(vel * 0.4, time + 0.02);
-    noiseGain.gain.exponentialRampToValueAtTime(vel * 0.15, time + 0.3);
+    noiseGain.gain.exponentialRampToValueAtTime(vel * 0.15, time + 0.3 * decay);
     noiseGain.gain.exponentialRampToValueAtTime(0.001, time + decayTime);
 
     noise.connect(highpass);
@@ -52,10 +60,10 @@ export class CymbalSynth {
 
     const sizzleFilter = this.audioContext.createBiquadFilter();
     sizzleFilter.type = 'highpass';
-    sizzleFilter.frequency.value = 10000;
+    sizzleFilter.frequency.value = 8000 + tone * 4000;
 
     const sizzleGain = this.audioContext.createGain();
-    sizzleGain.gain.setValueAtTime(vel * 0.25, time);
+    sizzleGain.gain.setValueAtTime(vel * 0.25 * (0.5 + tone * 0.5), time);
     sizzleGain.gain.exponentialRampToValueAtTime(0.001, time + decayTime * 0.8);
 
     sizzle.connect(sizzleFilter);
@@ -63,12 +71,12 @@ export class CymbalSynth {
     sizzleGain.connect(this.output);
 
     sizzle.start(time);
-    sizzle.stop(time + decayTime);
+    sizzle.stop(time + decayTime + 0.01);
 
-    // Tiny bit of metallic ping on attack only
+    // Metallic ping on attack
     const ping = this.audioContext.createOscillator();
     ping.type = 'sine';
-    ping.frequency.value = 6000;
+    ping.frequency.value = 4000 + tone * 4000;
 
     const pingGain = this.audioContext.createGain();
     pingGain.gain.setValueAtTime(vel * 0.08, time);
@@ -93,8 +101,19 @@ export class CymbalSynth {
     return buffer;
   }
 
+  setParams(params: Partial<CymbalParams>): void {
+    this.params = { ...this.params, ...params };
+    if (params.volume !== undefined) {
+      this.output.gain.value = params.volume;
+    }
+  }
+
+  getParams(): CymbalParams {
+    return { ...this.params };
+  }
+
   setVolume(volume: number): void {
-    this.volume = volume;
+    this.params.volume = volume;
     this.output.gain.value = volume;
   }
 

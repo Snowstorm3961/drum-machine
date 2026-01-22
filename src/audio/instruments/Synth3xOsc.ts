@@ -1,4 +1,4 @@
-import type { IAudioInstrument, SynthSettings, OscillatorSettings, EnvelopeSettings, FilterSettings } from '../../types';
+import type { IAudioInstrument, SynthSettings, OscillatorSettings, EnvelopeSettings, FilterSettings, FilterEnvelopeSettings } from '../../types';
 import { SynthVoice } from '../synthesis/SynthVoice';
 
 const createDefaultOscSettings = (): OscillatorSettings => ({
@@ -24,6 +24,14 @@ const DEFAULT_FILTER: FilterSettings = {
   enabled: true,
 };
 
+const DEFAULT_FILTER_ENVELOPE: FilterEnvelopeSettings = {
+  attack: 0.01,
+  decay: 0.3,
+  sustain: 0.3,
+  release: 0.3,
+  amount: 0.5,
+};
+
 export class Synth3xOsc implements IAudioInstrument {
   id: string;
   name: string;
@@ -37,6 +45,7 @@ export class Synth3xOsc implements IAudioInstrument {
   private oscSettings: [OscillatorSettings, OscillatorSettings, OscillatorSettings];
   private envelope: EnvelopeSettings;
   private filter: FilterSettings;
+  private filterEnvelope: FilterEnvelopeSettings;
 
   constructor(audioContext: AudioContext, id: string, name: string) {
     this.id = id;
@@ -50,6 +59,7 @@ export class Synth3xOsc implements IAudioInstrument {
     ];
     this.envelope = { ...DEFAULT_ENVELOPE };
     this.filter = { ...DEFAULT_FILTER };
+    this.filterEnvelope = { ...DEFAULT_FILTER_ENVELOPE };
 
     // Create output gain
     this.output = audioContext.createGain();
@@ -91,14 +101,14 @@ export class Synth3xOsc implements IAudioInstrument {
 
   noteOn(note: number, velocity: number, time: number): void {
     const voice = this.getNextVoice(note);
-    voice.noteOn(note, velocity, time, this.oscSettings, this.envelope, this.filter);
+    voice.noteOn(note, velocity, time, this.oscSettings, this.envelope, this.filter, this.filterEnvelope);
   }
 
   noteOff(note: number, time: number): void {
     // Find the voice playing this note
     for (const voice of this.voices) {
       if (voice.getCurrentNote() === note && voice.getIsPlaying()) {
-        voice.noteOff(time, this.envelope);
+        voice.noteOff(time, this.envelope, this.filterEnvelope);
         break;
       }
     }
@@ -107,7 +117,7 @@ export class Synth3xOsc implements IAudioInstrument {
   allNotesOff(time: number): void {
     for (const voice of this.voices) {
       if (voice.getIsPlaying()) {
-        voice.noteOff(time, this.envelope);
+        voice.noteOff(time, this.envelope, this.filterEnvelope);
       }
     }
   }
@@ -127,6 +137,10 @@ export class Synth3xOsc implements IAudioInstrument {
     this.filter = { ...this.filter, ...settings };
   }
 
+  setFilterEnvelope(settings: Partial<FilterEnvelopeSettings>): void {
+    this.filterEnvelope = { ...this.filterEnvelope, ...settings };
+  }
+
   setVolume(volume: number): void {
     this.output.gain.value = Math.max(0, Math.min(1, volume));
   }
@@ -139,6 +153,7 @@ export class Synth3xOsc implements IAudioInstrument {
       oscillators: this.oscSettings,
       envelope: this.envelope,
       filter: this.filter,
+      filterEnvelope: this.filterEnvelope,
       volume: this.output.gain.value,
     };
   }
@@ -152,6 +167,9 @@ export class Synth3xOsc implements IAudioInstrument {
     }
     if (settings.filter) {
       this.filter = settings.filter;
+    }
+    if (settings.filterEnvelope) {
+      this.filterEnvelope = settings.filterEnvelope;
     }
     if (settings.volume !== undefined) {
       this.setVolume(settings.volume);

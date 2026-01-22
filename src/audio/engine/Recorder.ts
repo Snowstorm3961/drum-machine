@@ -1,37 +1,34 @@
 export class Recorder {
   private audioContext: AudioContext;
-  private sourceNode: AudioNode | null = null;
   private mediaRecorder: MediaRecorder | null = null;
-  private mediaStreamDestination: MediaStreamAudioDestinationNode | null = null;
+  private mediaStreamDestination: MediaStreamAudioDestinationNode;
   private recordedChunks: Blob[] = [];
   private isRecording: boolean = false;
+  private mimeType: string;
 
   constructor(audioContext: AudioContext) {
     this.audioContext = audioContext;
+    // Create the MediaStreamDestination immediately - it stays connected permanently
+    this.mediaStreamDestination = audioContext.createMediaStreamDestination();
+    // Determine supported mime type once
+    this.mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : 'audio/webm';
   }
 
-  connect(sourceNode: AudioNode): void {
-    this.sourceNode = sourceNode;
+  // Returns the destination node that should be connected to the audio source
+  getDestination(): MediaStreamAudioDestinationNode {
+    return this.mediaStreamDestination;
   }
 
   startRecording(): void {
-    if (this.isRecording || !this.sourceNode) return;
+    if (this.isRecording) return;
 
     this.recordedChunks = [];
 
-    // Create a MediaStreamDestination to capture audio
-    this.mediaStreamDestination = this.audioContext.createMediaStreamDestination();
-
-    // Connect source to the media stream destination (parallel to main output)
-    this.sourceNode.connect(this.mediaStreamDestination);
-
-    // Create MediaRecorder with the stream
-    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-      ? 'audio/webm;codecs=opus'
-      : 'audio/webm';
-
+    // Create a fresh MediaRecorder each time
     this.mediaRecorder = new MediaRecorder(this.mediaStreamDestination.stream, {
-      mimeType,
+      mimeType: this.mimeType,
     });
 
     this.mediaRecorder.ondataavailable = (event) => {
@@ -42,24 +39,18 @@ export class Recorder {
 
     this.mediaRecorder.start(100); // Collect data every 100ms
     this.isRecording = true;
+    console.log('Recording started');
   }
 
   async stopRecording(): Promise<Blob | null> {
     if (!this.isRecording || !this.mediaRecorder) return null;
 
     return new Promise((resolve) => {
+      const currentMimeType = this.mimeType;
+
       this.mediaRecorder!.onstop = async () => {
         this.isRecording = false;
-
-        // Disconnect the media stream destination
-        if (this.mediaStreamDestination && this.sourceNode) {
-          try {
-            this.sourceNode.disconnect(this.mediaStreamDestination);
-          } catch {
-            // Ignore disconnect errors
-          }
-          this.mediaStreamDestination = null;
-        }
+        console.log('Recording stopped, chunks:', this.recordedChunks.length);
 
         if (this.recordedChunks.length === 0) {
           resolve(null);
@@ -67,15 +58,19 @@ export class Recorder {
         }
 
         // Combine chunks into a single blob
-        const webmBlob = new Blob(this.recordedChunks, { type: this.mediaRecorder!.mimeType });
+        const webmBlob = new Blob(this.recordedChunks, { type: currentMimeType });
         this.recordedChunks = [];
         this.mediaRecorder = null;
+
+        console.log('WebM blob size:', webmBlob.size);
 
         // Convert WebM to WAV for better compatibility
         try {
           const wavBlob = await this.convertToWav(webmBlob);
+          console.log('WAV blob size:', wavBlob.size);
           resolve(wavBlob);
-        } catch {
+        } catch (e) {
+          console.log('WAV conversion failed, returning WebM:', e);
           // If conversion fails, return the webm blob
           resolve(webmBlob);
         }

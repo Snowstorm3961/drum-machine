@@ -8,8 +8,57 @@ interface SynthControlsProps {
 
 const WAVEFORMS: OscillatorWaveform[] = ['sine', 'triangle', 'sawtooth', 'square'];
 
+// Reusable ADSR slider with text input
+interface ADSRSliderProps {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (value: number) => void;
+  unit?: string;
+  isPercentage?: boolean;
+}
+
+function ADSRSlider({ label, value, min, max, step, onChange, unit = 's', isPercentage = false }: ADSRSliderProps) {
+  const displayValue = isPercentage ? Math.round(value * 100) : value.toFixed(2);
+  const displayUnit = isPercentage ? '%' : unit;
+
+  return (
+    <div className="flex flex-col items-center">
+      <label className="text-xs text-[var(--color-text-secondary)] mb-1">{label}</label>
+      <input
+        type="number"
+        min={isPercentage ? 0 : min}
+        max={isPercentage ? 100 : max}
+        step={isPercentage ? 1 : step}
+        value={displayValue}
+        onChange={(e) => {
+          const val = parseFloat(e.target.value);
+          if (!isNaN(val)) {
+            const newValue = isPercentage ? val / 100 : val;
+            onChange(Math.max(min, Math.min(max, newValue)));
+          }
+        }}
+        className="w-14 px-1 py-0.5 text-xs text-center font-mono bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] rounded border border-[var(--color-bg-tertiary)] focus:outline-none focus:border-[var(--color-accent)] mb-1"
+      />
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="h-24 bg-[var(--color-bg-primary)] rounded appearance-none cursor-pointer accent-[var(--color-accent)]"
+        style={{ writingMode: 'vertical-lr', direction: 'rtl', width: '24px' }}
+      />
+      <span className="text-xs text-[var(--color-text-secondary)] mt-1">{displayUnit}</span>
+    </div>
+  );
+}
+
 export const SynthControls = memo(function SynthControls({ synthIndex }: SynthControlsProps) {
-  const { synths, updateSynthOscillator, updateSynthEnvelope, updateSynthFilter, updateSynthVolume } =
+  const { synths, updateSynthOscillator, updateSynthEnvelope, updateSynthFilter, updateSynthFilterEnvelope, updateSynthVolume } =
     useSynthStore();
   const synth = synths[synthIndex];
 
@@ -32,6 +81,13 @@ export const SynthControls = memo(function SynthControls({ synthIndex }: SynthCo
       updateSynthFilter(synthIndex, { [key]: value });
     },
     [synthIndex, updateSynthFilter]
+  );
+
+  const handleFilterEnvChange = useCallback(
+    (key: string, value: number) => {
+      updateSynthFilterEnvelope(synthIndex, { [key]: value });
+    },
+    [synthIndex, updateSynthFilterEnvelope]
   );
 
   return (
@@ -125,39 +181,112 @@ export const SynthControls = memo(function SynthControls({ synthIndex }: SynthCo
       </div>
 
       {/* Envelope & Filter */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* ADSR Envelope */}
         <div className="p-3 bg-[var(--color-bg-tertiary)] rounded-lg">
-          <span className="text-sm font-bold mb-2 block">ENVELOPE</span>
-          <div className="grid grid-cols-4 gap-2">
-            {(['attack', 'decay', 'sustain', 'release'] as const).map((param) => (
-              <div key={param}>
-                <label className="text-xs text-[var(--color-text-secondary)] block text-center">
-                  {param[0].toUpperCase()}
-                </label>
-                <input
-                  type="range"
-                  min="0"
-                  max={param === 'sustain' ? 100 : param === 'release' ? 400 : 200}
-                  value={param === 'sustain' ? synth.envelope[param] * 100 : synth.envelope[param] * 100}
-                  onChange={(e) =>
-                    handleEnvChange(
-                      param,
-                      param === 'sustain'
-                        ? parseInt(e.target.value) / 100
-                        : parseInt(e.target.value) / 100
-                    )
+          <span className="text-sm font-bold mb-3 block">AMP ENVELOPE</span>
+          <div className="flex justify-around">
+            <ADSRSlider
+              label="A"
+              value={synth.envelope.attack}
+              min={0}
+              max={2}
+              step={0.01}
+              onChange={(v) => handleEnvChange('attack', v)}
+            />
+            <ADSRSlider
+              label="D"
+              value={synth.envelope.decay}
+              min={0}
+              max={2}
+              step={0.01}
+              onChange={(v) => handleEnvChange('decay', v)}
+            />
+            <ADSRSlider
+              label="S"
+              value={synth.envelope.sustain}
+              min={0}
+              max={1}
+              step={0.01}
+              onChange={(v) => handleEnvChange('sustain', v)}
+              isPercentage
+            />
+            <ADSRSlider
+              label="R"
+              value={synth.envelope.release}
+              min={0}
+              max={4}
+              step={0.01}
+              onChange={(v) => handleEnvChange('release', v)}
+            />
+          </div>
+        </div>
+
+        {/* Filter Envelope */}
+        <div className="p-3 bg-[var(--color-bg-tertiary)] rounded-lg">
+          <span className="text-sm font-bold mb-3 block">FILTER ENVELOPE</span>
+          <div className="flex justify-around">
+            <ADSRSlider
+              label="A"
+              value={synth.filterEnvelope.attack}
+              min={0}
+              max={2}
+              step={0.01}
+              onChange={(v) => handleFilterEnvChange('attack', v)}
+            />
+            <ADSRSlider
+              label="D"
+              value={synth.filterEnvelope.decay}
+              min={0}
+              max={2}
+              step={0.01}
+              onChange={(v) => handleFilterEnvChange('decay', v)}
+            />
+            <ADSRSlider
+              label="S"
+              value={synth.filterEnvelope.sustain}
+              min={0}
+              max={1}
+              step={0.01}
+              onChange={(v) => handleFilterEnvChange('sustain', v)}
+              isPercentage
+            />
+            <ADSRSlider
+              label="R"
+              value={synth.filterEnvelope.release}
+              min={0}
+              max={4}
+              step={0.01}
+              onChange={(v) => handleFilterEnvChange('release', v)}
+            />
+          </div>
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-[var(--color-text-secondary)]">Amount</label>
+              <input
+                type="number"
+                min={-1}
+                max={1}
+                step={0.01}
+                value={synth.filterEnvelope.amount.toFixed(2)}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  if (!isNaN(val)) {
+                    handleFilterEnvChange('amount', Math.max(-1, Math.min(1, val)));
                   }
-                  className="w-full h-16 bg-[var(--color-bg-primary)] rounded appearance-none cursor-pointer accent-[var(--color-accent)]"
-                  style={{ writingMode: 'vertical-lr', direction: 'rtl' }}
-                />
-                <span className="text-xs text-[var(--color-text-secondary)] block text-center">
-                  {param === 'sustain'
-                    ? `${Math.round(synth.envelope[param] * 100)}%`
-                    : `${synth.envelope[param].toFixed(2)}s`}
-                </span>
-              </div>
-            ))}
+                }}
+                className="w-16 px-1 py-0.5 text-xs text-right font-mono bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] rounded border border-[var(--color-bg-tertiary)] focus:outline-none focus:border-[var(--color-accent)]"
+              />
+            </div>
+            <input
+              type="range"
+              min={-1}
+              max={1}
+              step={0.01}
+              value={synth.filterEnvelope.amount}
+              onChange={(e) => handleFilterEnvChange('amount', parseFloat(e.target.value))}
+              className="w-full h-2 bg-[var(--color-bg-primary)] rounded-lg appearance-none cursor-pointer accent-[var(--color-accent)]"
+            />
           </div>
         </div>
 
@@ -176,7 +305,7 @@ export const SynthControls = memo(function SynthControls({ synthIndex }: SynthCo
             </label>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-3">
             {/* Filter type */}
             <div className="flex gap-1">
               {(['lowpass', 'highpass', 'bandpass'] as const).map((type) => (
@@ -196,31 +325,59 @@ export const SynthControls = memo(function SynthControls({ synthIndex }: SynthCo
 
             {/* Frequency */}
             <div>
-              <label className="text-xs text-[var(--color-text-secondary)]">
-                Freq: {synth.filter.frequency}Hz
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-[var(--color-text-secondary)]">Cutoff</label>
+                <input
+                  type="number"
+                  min={20}
+                  max={20000}
+                  step={10}
+                  value={synth.filter.frequency}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    if (!isNaN(val)) {
+                      handleFilterChange('frequency', Math.max(20, Math.min(20000, val)));
+                    }
+                  }}
+                  className="w-20 px-1 py-0.5 text-xs text-right font-mono bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] rounded border border-[var(--color-bg-tertiary)] focus:outline-none focus:border-[var(--color-accent)]"
+                />
+              </div>
               <input
                 type="range"
                 min="20"
                 max="20000"
                 value={synth.filter.frequency}
                 onChange={(e) => handleFilterChange('frequency', parseInt(e.target.value))}
-                className="w-full h-1 bg-[var(--color-bg-primary)] rounded appearance-none cursor-pointer accent-[var(--color-accent)]"
+                className="w-full h-2 bg-[var(--color-bg-primary)] rounded-lg appearance-none cursor-pointer accent-[var(--color-accent)]"
               />
             </div>
 
             {/* Resonance */}
             <div>
-              <label className="text-xs text-[var(--color-text-secondary)]">
-                Res: {synth.filter.resonance.toFixed(1)}
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-[var(--color-text-secondary)]">Resonance</label>
+                <input
+                  type="number"
+                  min={0.1}
+                  max={20}
+                  step={0.1}
+                  value={synth.filter.resonance.toFixed(1)}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    if (!isNaN(val)) {
+                      handleFilterChange('resonance', Math.max(0.1, Math.min(20, val)));
+                    }
+                  }}
+                  className="w-16 px-1 py-0.5 text-xs text-right font-mono bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] rounded border border-[var(--color-bg-tertiary)] focus:outline-none focus:border-[var(--color-accent)]"
+                />
+              </div>
               <input
                 type="range"
                 min="1"
                 max="200"
                 value={synth.filter.resonance * 10}
                 onChange={(e) => handleFilterChange('resonance', parseInt(e.target.value) / 10)}
-                className="w-full h-1 bg-[var(--color-bg-primary)] rounded appearance-none cursor-pointer accent-[var(--color-accent)]"
+                className="w-full h-2 bg-[var(--color-bg-primary)] rounded-lg appearance-none cursor-pointer accent-[var(--color-accent)]"
               />
             </div>
           </div>

@@ -1,25 +1,34 @@
+import type { RimParams } from '../../types';
+
 export class RimSynth {
   private audioContext: AudioContext;
   private output: GainNode;
-  private volume: number = 1;
+  private params: RimParams = {
+    volume: 1,
+    pitch: 1,
+    decay: 1,
+  };
 
   constructor(audioContext: AudioContext) {
     this.audioContext = audioContext;
     this.output = audioContext.createGain();
-    this.output.gain.value = this.volume;
+    this.output.gain.value = this.params.volume;
   }
 
   trigger(time: number, velocity: number = 1): void {
+    const { pitch, decay } = this.params;
     const vel = velocity / 127;
+    const clickDecay = 0.02 * decay;
+    const noiseDecay = 0.01 * decay;
 
     // High-pitched click
     const osc = this.audioContext.createOscillator();
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(1700, time);
+    osc.frequency.setValueAtTime(1700 * pitch, time);
 
     const gain = this.audioContext.createGain();
     gain.gain.setValueAtTime(vel * 0.5, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + clickDecay);
 
     const highpass = this.audioContext.createBiquadFilter();
     highpass.type = 'highpass';
@@ -30,16 +39,16 @@ export class RimSynth {
     gain.connect(this.output);
 
     osc.start(time);
-    osc.stop(time + 0.02);
+    osc.stop(time + clickDecay + 0.01);
 
     // Add a short noise burst
-    const noiseBuffer = this.createNoiseBuffer();
+    const noiseBuffer = this.createNoiseBuffer(noiseDecay);
     const noise = this.audioContext.createBufferSource();
     noise.buffer = noiseBuffer;
 
     const noiseGain = this.audioContext.createGain();
     noiseGain.gain.setValueAtTime(vel * 0.15, time);
-    noiseGain.gain.exponentialRampToValueAtTime(0.001, time + 0.01);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, time + noiseDecay);
 
     const noiseHighpass = this.audioContext.createBiquadFilter();
     noiseHighpass.type = 'highpass';
@@ -50,11 +59,11 @@ export class RimSynth {
     noiseGain.connect(this.output);
 
     noise.start(time);
-    noise.stop(time + 0.01);
+    noise.stop(time + noiseDecay + 0.01);
   }
 
-  private createNoiseBuffer(): AudioBuffer {
-    const bufferSize = this.audioContext.sampleRate * 0.01;
+  private createNoiseBuffer(duration: number): AudioBuffer {
+    const bufferSize = Math.ceil(this.audioContext.sampleRate * duration);
     const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
     const data = buffer.getChannelData(0);
 
@@ -65,8 +74,19 @@ export class RimSynth {
     return buffer;
   }
 
+  setParams(params: Partial<RimParams>): void {
+    this.params = { ...this.params, ...params };
+    if (params.volume !== undefined) {
+      this.output.gain.value = params.volume;
+    }
+  }
+
+  getParams(): RimParams {
+    return { ...this.params };
+  }
+
   setVolume(volume: number): void {
-    this.volume = volume;
+    this.params.volume = volume;
     this.output.gain.value = volume;
   }
 
