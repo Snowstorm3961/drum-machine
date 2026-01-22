@@ -17,6 +17,7 @@ export class AudioEngine {
   private synths: Synth3xOsc[] = [];
   private masterGain: GainNode | null = null;
   private isInitialized: boolean = false;
+  private isAudioUnlocked: boolean = false;
   private stepCallback: StepCallback | null = null;
   private recordingCallback: RecordingCallback | null = null;
 
@@ -37,11 +38,42 @@ export class AudioEngine {
     return AudioEngine.instance;
   }
 
+  // iOS-specific audio unlock - must be called synchronously in a user gesture
+  unlockAudio(): void {
+    if (this.isAudioUnlocked) return;
+
+    // Create AudioContext if it doesn't exist
+    if (!this.audioContext) {
+      // Use webkitAudioContext for older iOS versions
+      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      this.audioContext = new AudioContextClass();
+    }
+
+    // Resume synchronously (don't await - iOS needs this in the same call stack)
+    if (this.audioContext.state === 'suspended') {
+      this.audioContext.resume();
+    }
+
+    // Play a silent buffer to unlock iOS audio
+    // This is a well-known iOS workaround
+    const silentBuffer = this.audioContext.createBuffer(1, 1, 22050);
+    const source = this.audioContext.createBufferSource();
+    source.buffer = silentBuffer;
+    source.connect(this.audioContext.destination);
+    source.start(0);
+
+    this.isAudioUnlocked = true;
+    console.log('Audio unlocked, context state:', this.audioContext.state);
+  }
+
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
 
-    // Create audio context
-    this.audioContext = new AudioContext();
+    // Create audio context if not already created by unlockAudio
+    if (!this.audioContext) {
+      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      this.audioContext = new AudioContextClass();
+    }
 
     // Resume context if suspended (required for iOS/Chrome autoplay policy)
     if (this.audioContext.state === 'suspended') {
@@ -77,11 +109,13 @@ export class AudioEngine {
     this.masterGain.connect(this.recorder.getDestination());
 
     this.isInitialized = true;
+    console.log('AudioEngine initialized, context state:', this.audioContext.state);
   }
 
   async ensureResumed(): Promise<void> {
     if (this.audioContext && this.audioContext.state === 'suspended') {
       await this.audioContext.resume();
+      console.log('AudioContext resumed, new state:', this.audioContext.state);
     }
   }
 

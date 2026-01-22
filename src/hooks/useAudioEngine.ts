@@ -15,6 +15,8 @@ export function useAudioEngine() {
   // Initialize audio engine
   const initialize = useCallback(async () => {
     if (isInitialized) return;
+    // Unlock audio synchronously first (for iOS)
+    audioEngine.unlockAudio();
     await audioEngine.initialize();
     setInitialized(true);
   }, [isInitialized, setInitialized]);
@@ -95,6 +97,8 @@ export function useAudioEngine() {
   useEffect(() => {
     const handleStateChange = async () => {
       if (state === 'playing' && !isPlayingRef.current) {
+        // Unlock audio synchronously first (for iOS)
+        audioEngine.unlockAudio();
         await audioEngine.ensureResumed();
         audioEngine.play();
         isPlayingRef.current = true;
@@ -113,6 +117,8 @@ export function useAudioEngine() {
   // Trigger drum sound (for pad hits)
   const triggerDrum = useCallback(
     async (drumId: string, velocity: number = 100) => {
+      // Unlock audio synchronously first (for iOS)
+      audioEngine.unlockAudio();
       await audioEngine.ensureResumed();
       audioEngine.triggerDrum(drumId, velocity);
     },
@@ -122,6 +128,8 @@ export function useAudioEngine() {
   // Trigger synth note (for preview)
   const triggerSynthNote = useCallback(
     async (synthIndex: number, note: number, velocity: number = 100) => {
+      // Unlock audio synchronously first (for iOS)
+      audioEngine.unlockAudio();
       await audioEngine.ensureResumed();
       audioEngine.triggerSynthNote(synthIndex, note, velocity);
     },
@@ -131,6 +139,8 @@ export function useAudioEngine() {
   // Start recording
   const startRecording = useCallback(async () => {
     console.log('startRecording called');
+    // Unlock audio synchronously first (for iOS)
+    audioEngine.unlockAudio();
     await initialize();
     await audioEngine.ensureResumed();
     audioEngine.startRecording();
