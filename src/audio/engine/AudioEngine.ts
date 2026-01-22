@@ -40,30 +40,56 @@ export class AudioEngine {
 
   // iOS-specific audio unlock - must be called synchronously in a user gesture
   unlockAudio(): void {
-    if (this.isAudioUnlocked) return;
-
-    // Create AudioContext if it doesn't exist
-    if (!this.audioContext) {
-      // Use webkitAudioContext for older iOS versions
-      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      this.audioContext = new AudioContextClass();
+    if (this.isAudioUnlocked && this.audioContext?.state === 'running') {
+      return;
     }
 
-    // Resume synchronously (don't await - iOS needs this in the same call stack)
-    if (this.audioContext.state === 'suspended') {
-      this.audioContext.resume();
+    try {
+      // Create AudioContext if it doesn't exist
+      if (!this.audioContext) {
+        // Use webkitAudioContext for older iOS versions
+        const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        this.audioContext = new AudioContextClass();
+        console.log('Created AudioContext, initial state:', this.audioContext.state);
+      }
+
+      // Resume synchronously (don't await - iOS needs this in the same call stack)
+      if (this.audioContext.state === 'suspended') {
+        this.audioContext.resume();
+        console.log('Called resume(), state:', this.audioContext.state);
+      }
+
+      // Method 1: Play a silent oscillator - more reliable on some iOS versions
+      try {
+        const oscillator = this.audioContext.createOscillator();
+        const gainNode = this.audioContext.createGain();
+        gainNode.gain.value = 0.001; // Nearly silent
+        oscillator.connect(gainNode);
+        gainNode.connect(this.audioContext.destination);
+        oscillator.start(0);
+        oscillator.stop(this.audioContext.currentTime + 0.1);
+        console.log('Played silent oscillator');
+      } catch (e) {
+        console.log('Oscillator unlock failed:', e);
+      }
+
+      // Method 2: Play a silent buffer as backup
+      try {
+        const silentBuffer = this.audioContext.createBuffer(1, 1, 22050);
+        const source = this.audioContext.createBufferSource();
+        source.buffer = silentBuffer;
+        source.connect(this.audioContext.destination);
+        source.start(0);
+        console.log('Played silent buffer');
+      } catch (e) {
+        console.log('Buffer unlock failed:', e);
+      }
+
+      this.isAudioUnlocked = true;
+      console.log('Audio unlock complete, context state:', this.audioContext.state);
+    } catch (e) {
+      console.error('Audio unlock failed:', e);
     }
-
-    // Play a silent buffer to unlock iOS audio
-    // This is a well-known iOS workaround
-    const silentBuffer = this.audioContext.createBuffer(1, 1, 22050);
-    const source = this.audioContext.createBufferSource();
-    source.buffer = silentBuffer;
-    source.connect(this.audioContext.destination);
-    source.start(0);
-
-    this.isAudioUnlocked = true;
-    console.log('Audio unlocked, context state:', this.audioContext.state);
   }
 
   async initialize(): Promise<void> {
