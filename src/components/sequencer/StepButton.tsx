@@ -5,7 +5,17 @@ interface StepButtonProps {
   isCurrentStep: boolean;
   stepIndex: number;
   color: string;
+  velocity: number;
   onToggle: () => void;
+}
+
+// Map velocity to visual opacity for active steps
+function velocityToOpacity(velocity: number): number {
+  if (velocity <= 26) return 0.4;
+  if (velocity <= 52) return 0.6;
+  if (velocity <= 78) return 0.8;
+  if (velocity <= 104) return 0.9;
+  return 1.0;
 }
 
 export const StepButton = memo(function StepButton({
@@ -13,6 +23,7 @@ export const StepButton = memo(function StepButton({
   isCurrentStep,
   stepIndex,
   color,
+  velocity,
   onToggle,
 }: StepButtonProps) {
   // Highlight every 4th step for visual beat reference
@@ -32,7 +43,7 @@ export const StepButton = memo(function StepButton({
       `}
       style={{
         backgroundColor: active ? color : 'var(--color-step-inactive)',
-        opacity: active ? 1 : isBeatStart ? 0.6 : 0.4,
+        opacity: active ? velocityToOpacity(velocity) : isBeatStart ? 0.6 : 0.4,
       }}
       onClick={onToggle}
       aria-label={`Step ${stepIndex + 1}, ${active ? 'active' : 'inactive'}`}

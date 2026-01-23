@@ -11,29 +11,29 @@ const NOTES = [
   72, 71, 70, 69, 68, 67, 66, 65, 64, 63, 62, 61, 60, 59, 58, 57, 56, 55, 54, 53, 52, 51, 50, 49, 48,
 ]; // C5 down to C3
 
+// Map velocity to visual opacity
+function velocityToOpacity(velocity: number): number {
+  if (velocity <= 26) return 0.4;
+  if (velocity <= 52) return 0.6;
+  if (velocity <= 78) return 0.8;
+  if (velocity <= 104) return 0.9;
+  return 1.0;
+}
+
 export const SynthSequencer = memo(function SynthSequencer({ synthIndex }: SynthSequencerProps) {
-  const { patterns, toggleNote } = useSynthStore();
+  const { patterns, currentSynthPatternIndex, cycleNote } = useSynthStore();
   const { currentStep, state } = useTransportStore();
-  const { triggerSynthNote, initialize } = useAudioEngine();
-  const pattern = patterns[synthIndex];
+  const { initialize } = useAudioEngine();
+  const patIdx = currentSynthPatternIndex[synthIndex];
+  const pattern = patterns[synthIndex][patIdx];
   const isPlaying = state === 'playing';
 
   const handleCellClick = useCallback(
     async (stepIndex: number, note: number) => {
       await initialize();
-      const stepData = pattern.steps[stepIndex];
-      const notes = stepData.notes || [];
-      const isNoteActive = notes.includes(note);
-
-      // Toggle the note (add or remove)
-      toggleNote(synthIndex, stepIndex, note);
-
-      // Play sound when adding a note
-      if (!isNoteActive) {
-        triggerSynthNote(synthIndex, note, 100);
-      }
+      cycleNote(synthIndex, stepIndex, note);
     },
-    [synthIndex, pattern.steps, toggleNote, triggerSynthNote, initialize]
+    [synthIndex, cycleNote, initialize]
   );
 
   return (
@@ -101,6 +101,7 @@ export const SynthSequencer = memo(function SynthSequencer({ synthIndex }: Synth
                             ? 'bg-[var(--color-bg-primary)] bg-opacity-50'
                             : 'bg-[var(--color-bg-secondary)]'
                         } ${isCurrentStep ? 'ring-1 ring-inset ring-[var(--color-step-current)]' : ''} hover:bg-[var(--color-accent)] hover:bg-opacity-30`}
+                        style={isActive ? { opacity: velocityToOpacity(stepData.velocity) } : undefined}
                         aria-label={`Step ${stepIndex + 1}, Note ${noteName}`}
                       />
                     );

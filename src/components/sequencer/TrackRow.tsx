@@ -54,6 +54,7 @@ export const TrackRow = memo(function TrackRow({ sound, steps }: TrackRowProps) 
             isCurrentStep={isPlaying && currentStep === index}
             stepIndex={index}
             color={sound.color}
+            velocity={step.velocity}
             onToggle={() => handleToggle(index)}
           />
         ))}

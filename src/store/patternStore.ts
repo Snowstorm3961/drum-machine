@@ -2,6 +2,11 @@ import { create } from 'zustand';
 import type { Pattern, Step, TrackPattern } from '../types';
 import { DRUM_SOUNDS, STEPS_PER_PATTERN, PATTERNS_COUNT } from '../data/drumKit';
 
+// Velocity cycling: 5 levels, default is middle (78)
+// Cycle order: off → 78 → 104 → 127 → 26 → 52 → off
+export const VELOCITY_LEVELS = [78, 104, 127, 26, 52] as const;
+export const DEFAULT_VELOCITY = 78;
+
 // Create an empty step
 const createEmptyStep = (): Step => ({
   active: false,
@@ -38,9 +43,11 @@ interface PatternStore {
   // Actions
   setCurrentPattern: (patternId: string) => void;
   toggleStep: (trackId: string, stepIndex: number) => void;
+  cycleStep: (trackId: string, stepIndex: number) => void;
   setStepVelocity: (trackId: string, stepIndex: number, velocity: number) => void;
   clearPattern: (patternId: string) => void;
   copyPattern: (sourceId: string, targetId: string) => void;
+  pasteTracksIntoPattern: (patternId: string, tracks: TrackPattern[]) => void;
   renamePattern: (patternId: string, name: string) => void;
 }
 
@@ -68,6 +75,41 @@ export const usePatternStore = create<PatternStore>((set, get) => ({
               steps: track.steps.map((step, i) => {
                 if (i !== stepIndex) return step;
                 return { ...step, active: !step.active };
+              }),
+            };
+          }),
+        };
+      }),
+    })),
+
+  cycleStep: (trackId, stepIndex) =>
+    set((state) => ({
+      patterns: state.patterns.map((pattern) => {
+        if (pattern.id !== state.currentPatternId) return pattern;
+        return {
+          ...pattern,
+          tracks: pattern.tracks.map((track) => {
+            if (track.trackId !== trackId) return track;
+            return {
+              ...track,
+              steps: track.steps.map((step, i) => {
+                if (i !== stepIndex) return step;
+                if (!step.active) {
+                  // Place at default velocity
+                  return { ...step, active: true, velocity: DEFAULT_VELOCITY };
+                }
+                // Find current position in cycle
+                const idx = VELOCITY_LEVELS.indexOf(step.velocity as typeof VELOCITY_LEVELS[number]);
+                if (idx === -1) {
+                  // Unknown velocity, start cycle from beginning
+                  return { ...step, velocity: VELOCITY_LEVELS[0] };
+                }
+                if (idx === VELOCITY_LEVELS.length - 1) {
+                  // End of cycle, deactivate
+                  return { ...step, active: false, velocity: DEFAULT_VELOCITY };
+                }
+                // Next velocity in cycle
+                return { ...step, velocity: VELOCITY_LEVELS[idx + 1] };
               }),
             };
           }),
@@ -127,6 +169,20 @@ export const usePatternStore = create<PatternStore>((set, get) => ({
         }),
       };
     }),
+
+  pasteTracksIntoPattern: (patternId, tracks) =>
+    set((state) => ({
+      patterns: state.patterns.map((pattern) => {
+        if (pattern.id !== patternId) return pattern;
+        return {
+          ...pattern,
+          tracks: tracks.map((track) => ({
+            ...track,
+            steps: track.steps.map((step) => ({ ...step })),
+          })),
+        };
+      }),
+    })),
 
   renamePattern: (patternId, name) =>
     set((state) => ({

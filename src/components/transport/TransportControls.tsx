@@ -5,25 +5,13 @@ import { Button } from '../ui/Button';
 import { MIN_BPM, MAX_BPM } from '../../data/drumKit';
 
 export const TransportControls = memo(function TransportControls() {
-  const { state, bpm, swing, setBpm, setSwing } = useTransportStore();
+  const { bpm, swing, setBpm, setSwing } = useTransportStore();
   const { clearPattern, currentPatternId } = usePatternStore();
   const {
-    initialize,
-    play,
-    stop,
     isRecording,
     startRecording,
     stopRecordingAndDownload,
   } = useAudioEngine();
-
-  const handlePlayStop = useCallback(async () => {
-    await initialize();
-    if (state === 'playing') {
-      stop();
-    } else {
-      play();
-    }
-  }, [state, initialize, play, stop]);
 
   const handleRecord = useCallback(async () => {
     if (isRecording) {
@@ -61,31 +49,8 @@ export const TransportControls = memo(function TransportControls() {
     clearPattern(currentPatternId);
   }, [clearPattern, currentPatternId]);
 
-  const isPlaying = state === 'playing';
-
   return (
     <div className="flex flex-wrap items-center gap-4 p-4 bg-[var(--color-bg-secondary)] rounded-xl">
-      {/* Play/Stop button */}
-      <Button
-        variant="primary"
-        size="lg"
-        onClick={handlePlayStop}
-        className="min-w-[100px]"
-        aria-label={isPlaying ? 'Stop' : 'Play'}
-      >
-        {isPlaying ? (
-          <span className="flex items-center gap-2">
-            <StopIcon />
-            Stop
-          </span>
-        ) : (
-          <span className="flex items-center gap-2">
-            <PlayIcon />
-            Play
-          </span>
-        )}
-      </Button>
-
       {/* Record button */}
       <Button
         variant={isRecording ? 'primary' : 'secondary'}
@@ -148,22 +113,6 @@ export const TransportControls = memo(function TransportControls() {
     </div>
   );
 });
-
-function PlayIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M4 2l10 6-10 6V2z" />
-    </svg>
-  );
-}
-
-function StopIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-      <rect x="3" y="3" width="10" height="10" />
-    </svg>
-  );
-}
 
 function RecordIcon({ isRecording }: { isRecording: boolean }) {
   return (

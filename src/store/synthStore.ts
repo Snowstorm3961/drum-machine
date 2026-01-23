@@ -2,6 +2,11 @@ import { create } from 'zustand';
 import type { SynthSettings, SynthPattern, Step, OscillatorSettings, EnvelopeSettings, FilterSettings, FilterEnvelopeSettings } from '../types';
 
 const STEPS_PER_PATTERN = 16;
+const PATTERNS_PER_SYNTH = 16;
+
+// Velocity cycling: 5 levels, default is middle (78)
+const VELOCITY_LEVELS = [78, 104, 127, 26, 52] as const;
+const DEFAULT_VELOCITY = 78;
 
 // Default oscillator settings
 const defaultOsc = (waveform: 'sine' | 'square' | 'sawtooth' | 'triangle', enabled: boolean = true): OscillatorSettings => ({
@@ -88,8 +93,10 @@ export const nameToMidiNote = (name: string): number => {
 interface SynthStore {
   // 3 synthesizers
   synths: [SynthSettings, SynthSettings, SynthSettings];
-  // Patterns for each synth
-  patterns: [SynthPattern, SynthPattern, SynthPattern];
+  // Patterns for each synth (3 synths x 16 patterns)
+  patterns: SynthPattern[][];
+  // Which pattern is currently selected per synth
+  currentSynthPatternIndex: [number, number, number];
   // Currently selected synth for editing
   selectedSynthIndex: number;
   // Whether synth section is expanded
@@ -98,6 +105,7 @@ interface SynthStore {
   // Actions
   setSelectedSynth: (index: number) => void;
   setSynthsEnabled: (enabled: boolean) => void;
+  setCurrentSynthPattern: (synthIndex: number, patternIndex: number) => void;
 
   // Synth settings
   updateSynthOscillator: (synthIndex: number, oscIndex: number, settings: Partial<OscillatorSettings>) => void;
@@ -107,16 +115,26 @@ interface SynthStore {
   updateSynthVolume: (synthIndex: number, volume: number) => void;
   updateSynthName: (synthIndex: number, name: string) => void;
 
-  // Pattern editing
+  // Pattern editing (operates on currently selected pattern)
   toggleStep: (synthIndex: number, stepIndex: number) => void;
   toggleNote: (synthIndex: number, stepIndex: number, note: number) => void;
+  cycleNote: (synthIndex: number, stepIndex: number, note: number) => void;
   setStepNote: (synthIndex: number, stepIndex: number, note: number) => void;
   setStepVelocity: (synthIndex: number, stepIndex: number, velocity: number) => void;
   clearPattern: (synthIndex: number) => void;
+  pasteStepsIntoCurrentPattern: (synthIndex: number, steps: Step[]) => void;
+  transposeCurrentPattern: (synthIndex: number, semitones: number) => void;
 
   // Getters
   getSynthPattern: (synthIndex: number) => SynthPattern;
+  getCurrentSynthPattern: (synthIndex: number) => SynthPattern;
 }
+
+// Create array of 16 empty patterns for a synth
+const createSynthPatterns = (synthId: string): SynthPattern[] =>
+  Array.from({ length: PATTERNS_PER_SYNTH }, (_, i) =>
+    createEmptySynthPattern(`${synthId}-${i}`)
+  );
 
 export const useSynthStore = create<SynthStore>((set, get) => ({
   synths: [
@@ -125,15 +143,22 @@ export const useSynthStore = create<SynthStore>((set, get) => ({
     createDefaultSynthSettings('synth-3', 'Synth 3'),
   ],
   patterns: [
-    createEmptySynthPattern('synth-1'),
-    createEmptySynthPattern('synth-2'),
-    createEmptySynthPattern('synth-3'),
+    createSynthPatterns('synth-1'),
+    createSynthPatterns('synth-2'),
+    createSynthPatterns('synth-3'),
   ],
+  currentSynthPatternIndex: [0, 0, 0],
   selectedSynthIndex: 0,
   synthsEnabled: true,
 
   setSelectedSynth: (index) => set({ selectedSynthIndex: index }),
   setSynthsEnabled: (enabled) => set({ synthsEnabled: enabled }),
+  setCurrentSynthPattern: (synthIndex, patternIndex) =>
+    set((state) => {
+      const newIndices = [...state.currentSynthPatternIndex] as [number, number, number];
+      newIndices[synthIndex] = patternIndex;
+      return { currentSynthPatternIndex: newIndices };
+    }),
 
   updateSynthOscillator: (synthIndex, oscIndex, settings) =>
     set((state) => {
@@ -192,88 +217,175 @@ export const useSynthStore = create<SynthStore>((set, get) => ({
 
   toggleStep: (synthIndex, stepIndex) =>
     set((state) => {
-      const newPatterns = [...state.patterns] as [SynthPattern, SynthPattern, SynthPattern];
-      const pattern = { ...newPatterns[synthIndex] };
-      const newSteps = [...pattern.steps];
-      const step = newSteps[stepIndex];
-      // Clear notes when toggling off
-      if (step.active) {
-        newSteps[stepIndex] = { ...step, active: false, notes: [] };
-      } else {
-        newSteps[stepIndex] = { ...step, active: true };
-      }
-      pattern.steps = newSteps;
-      newPatterns[synthIndex] = pattern;
+      const patIdx = state.currentSynthPatternIndex[synthIndex];
+      const newPatterns = state.patterns.map((synthPatterns, si) => {
+        if (si !== synthIndex) return synthPatterns;
+        return synthPatterns.map((pattern, pi) => {
+          if (pi !== patIdx) return pattern;
+          const newSteps = [...pattern.steps];
+          const step = newSteps[stepIndex];
+          if (step.active) {
+            newSteps[stepIndex] = { ...step, active: false, notes: [] };
+          } else {
+            newSteps[stepIndex] = { ...step, active: true };
+          }
+          return { ...pattern, steps: newSteps };
+        });
+      });
       return { patterns: newPatterns };
     }),
 
   toggleNote: (synthIndex, stepIndex, note) =>
     set((state) => {
-      const newPatterns = [...state.patterns] as [SynthPattern, SynthPattern, SynthPattern];
-      const pattern = { ...newPatterns[synthIndex] };
-      const newSteps = [...pattern.steps];
-      const step = newSteps[stepIndex];
-      const notes = step.notes || [];
-      const noteIndex = notes.indexOf(note);
+      const patIdx = state.currentSynthPatternIndex[synthIndex];
+      const newPatterns = state.patterns.map((synthPatterns, si) => {
+        if (si !== synthIndex) return synthPatterns;
+        return synthPatterns.map((pattern, pi) => {
+          if (pi !== patIdx) return pattern;
+          const newSteps = [...pattern.steps];
+          const step = newSteps[stepIndex];
+          const notes = step.notes || [];
+          const noteIndex = notes.indexOf(note);
+          if (noteIndex >= 0) {
+            const newNotes = notes.filter((n) => n !== note);
+            newSteps[stepIndex] = { ...step, notes: newNotes, active: newNotes.length > 0 };
+          } else {
+            const newNotes = [...notes, note].sort((a, b) => b - a);
+            newSteps[stepIndex] = { ...step, notes: newNotes, active: true };
+          }
+          return { ...pattern, steps: newSteps };
+        });
+      });
+      return { patterns: newPatterns };
+    }),
 
-      if (noteIndex >= 0) {
-        // Remove the note
-        const newNotes = notes.filter((n) => n !== note);
-        newSteps[stepIndex] = {
-          ...step,
-          notes: newNotes,
-          active: newNotes.length > 0,
-        };
-      } else {
-        // Add the note
-        const newNotes = [...notes, note].sort((a, b) => b - a);
-        newSteps[stepIndex] = {
-          ...step,
-          notes: newNotes,
-          active: true,
-        };
-      }
-      pattern.steps = newSteps;
-      newPatterns[synthIndex] = pattern;
+  cycleNote: (synthIndex, stepIndex, note) =>
+    set((state) => {
+      const patIdx = state.currentSynthPatternIndex[synthIndex];
+      const newPatterns = state.patterns.map((synthPatterns, si) => {
+        if (si !== synthIndex) return synthPatterns;
+        return synthPatterns.map((pattern, pi) => {
+          if (pi !== patIdx) return pattern;
+          const newSteps = [...pattern.steps];
+          const step = newSteps[stepIndex];
+          const notes = step.notes || [];
+          const hasNote = notes.includes(note);
+
+          if (!hasNote) {
+            // Add note at default velocity
+            const newNotes = [...notes, note].sort((a, b) => b - a);
+            newSteps[stepIndex] = { ...step, notes: newNotes, active: true, velocity: DEFAULT_VELOCITY };
+          } else {
+            // Cycle velocity
+            const idx = VELOCITY_LEVELS.indexOf(step.velocity as typeof VELOCITY_LEVELS[number]);
+            if (idx === -1) {
+              // Unknown velocity, start cycle
+              newSteps[stepIndex] = { ...step, velocity: VELOCITY_LEVELS[0] };
+            } else if (idx === VELOCITY_LEVELS.length - 1) {
+              // End of cycle, remove this note
+              const newNotes = notes.filter((n) => n !== note);
+              newSteps[stepIndex] = { ...step, notes: newNotes, active: newNotes.length > 0, velocity: DEFAULT_VELOCITY };
+            } else {
+              // Next velocity
+              newSteps[stepIndex] = { ...step, velocity: VELOCITY_LEVELS[idx + 1] };
+            }
+          }
+          return { ...pattern, steps: newSteps };
+        });
+      });
       return { patterns: newPatterns };
     }),
 
   setStepNote: (synthIndex, stepIndex, note) =>
     set((state) => {
-      const newPatterns = [...state.patterns] as [SynthPattern, SynthPattern, SynthPattern];
-      const pattern = { ...newPatterns[synthIndex] };
-      const newSteps = [...pattern.steps];
-      const step = newSteps[stepIndex];
-      const notes = step.notes || [];
-      if (!notes.includes(note)) {
-        newSteps[stepIndex] = {
-          ...step,
-          notes: [...notes, note].sort((a, b) => b - a),
-          active: true,
-        };
-      }
-      pattern.steps = newSteps;
-      newPatterns[synthIndex] = pattern;
+      const patIdx = state.currentSynthPatternIndex[synthIndex];
+      const newPatterns = state.patterns.map((synthPatterns, si) => {
+        if (si !== synthIndex) return synthPatterns;
+        return synthPatterns.map((pattern, pi) => {
+          if (pi !== patIdx) return pattern;
+          const newSteps = [...pattern.steps];
+          const step = newSteps[stepIndex];
+          const notes = step.notes || [];
+          if (!notes.includes(note)) {
+            newSteps[stepIndex] = { ...step, notes: [...notes, note].sort((a, b) => b - a), active: true };
+          }
+          return { ...pattern, steps: newSteps };
+        });
+      });
       return { patterns: newPatterns };
     }),
 
   setStepVelocity: (synthIndex, stepIndex, velocity) =>
     set((state) => {
-      const newPatterns = [...state.patterns] as [SynthPattern, SynthPattern, SynthPattern];
-      const pattern = { ...newPatterns[synthIndex] };
-      const newSteps = [...pattern.steps];
-      newSteps[stepIndex] = { ...newSteps[stepIndex], velocity: Math.max(0, Math.min(127, velocity)) };
-      pattern.steps = newSteps;
-      newPatterns[synthIndex] = pattern;
+      const patIdx = state.currentSynthPatternIndex[synthIndex];
+      const newPatterns = state.patterns.map((synthPatterns, si) => {
+        if (si !== synthIndex) return synthPatterns;
+        return synthPatterns.map((pattern, pi) => {
+          if (pi !== patIdx) return pattern;
+          const newSteps = [...pattern.steps];
+          newSteps[stepIndex] = { ...newSteps[stepIndex], velocity: Math.max(0, Math.min(127, velocity)) };
+          return { ...pattern, steps: newSteps };
+        });
+      });
       return { patterns: newPatterns };
     }),
 
   clearPattern: (synthIndex) =>
     set((state) => {
-      const newPatterns = [...state.patterns] as [SynthPattern, SynthPattern, SynthPattern];
-      newPatterns[synthIndex] = createEmptySynthPattern(state.synths[synthIndex].id);
+      const patIdx = state.currentSynthPatternIndex[synthIndex];
+      const synthId = state.synths[synthIndex].id;
+      const newPatterns = state.patterns.map((synthPatterns, si) => {
+        if (si !== synthIndex) return synthPatterns;
+        return synthPatterns.map((pattern, pi) => {
+          if (pi !== patIdx) return pattern;
+          return createEmptySynthPattern(`${synthId}-${pi}`);
+        });
+      });
       return { patterns: newPatterns };
     }),
 
-  getSynthPattern: (synthIndex) => get().patterns[synthIndex],
+  pasteStepsIntoCurrentPattern: (synthIndex, steps) =>
+    set((state) => {
+      const patIdx = state.currentSynthPatternIndex[synthIndex];
+      const newPatterns = state.patterns.map((synthPatterns, si) => {
+        if (si !== synthIndex) return synthPatterns;
+        return synthPatterns.map((pattern, pi) => {
+          if (pi !== patIdx) return pattern;
+          return { ...pattern, steps: steps.map((s) => ({ ...s, notes: s.notes ? [...s.notes] : [] })) };
+        });
+      });
+      return { patterns: newPatterns };
+    }),
+
+  transposeCurrentPattern: (synthIndex, semitones) =>
+    set((state) => {
+      const patIdx = state.currentSynthPatternIndex[synthIndex];
+      const newPatterns = state.patterns.map((synthPatterns, si) => {
+        if (si !== synthIndex) return synthPatterns;
+        return synthPatterns.map((pattern, pi) => {
+          if (pi !== patIdx) return pattern;
+          const newSteps = pattern.steps.map((step) => {
+            if (!step.notes || step.notes.length === 0) return step;
+            const transposed = step.notes
+              .map((n) => n + semitones)
+              .filter((n) => n >= 0 && n <= 127);
+            return { ...step, notes: transposed, active: transposed.length > 0 };
+          });
+          return { ...pattern, steps: newSteps };
+        });
+      });
+      return { patterns: newPatterns };
+    }),
+
+  getSynthPattern: (synthIndex) => {
+    const state = get();
+    const patIdx = state.currentSynthPatternIndex[synthIndex];
+    return state.patterns[synthIndex][patIdx];
+  },
+
+  getCurrentSynthPattern: (synthIndex) => {
+    const state = get();
+    const patIdx = state.currentSynthPatternIndex[synthIndex];
+    return state.patterns[synthIndex][patIdx];
+  },
 }));

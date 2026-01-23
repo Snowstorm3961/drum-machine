@@ -7,7 +7,7 @@ export function useAudioEngine() {
   const { state, bpm, swing, play, stop, pause, setCurrentStep } = useTransportStore();
   const { patterns, currentPatternId } = usePatternStore();
   const { masterVolume, isInitialized, setInitialized } = useProjectStore();
-  const { synths, patterns: synthPatterns, synthsEnabled } = useSynthStore();
+  const { synths, patterns: synthPatterns, currentSynthPatternIndex, synthsEnabled } = useSynthStore();
   const { params: drumParams } = useDrumStore();
   const isPlayingRef = useRef(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -49,10 +49,11 @@ export function useAudioEngine() {
     audioEngine.setPattern(patternMap);
   }, [patterns, currentPatternId]);
 
-  // Sync synth patterns with audio engine
+  // Sync synth patterns with audio engine (pass currently selected pattern per synth)
   useEffect(() => {
-    audioEngine.setSynthPatterns([...synthPatterns]);
-  }, [synthPatterns]);
+    const currentPatterns = synthPatterns.map((synthPats, i) => synthPats[currentSynthPatternIndex[i]]);
+    audioEngine.setSynthPatterns(currentPatterns);
+  }, [synthPatterns, currentSynthPatternIndex]);
 
   // Sync synths enabled state
   useEffect(() => {

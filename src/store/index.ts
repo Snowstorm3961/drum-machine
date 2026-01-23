@@ -4,3 +4,5 @@ export { useArrangementStore } from './arrangementStore';
 export { useProjectStore } from './projectStore';
 export { useSynthStore, NOTE_NAMES, midiNoteToName, nameToMidiNote } from './synthStore';
 export { useDrumStore, drumParamConfigs } from './drumStore';
+export { useSequenceStore } from './sequenceStore';
+export { useParamSliderStore } from './paramSliderStore';

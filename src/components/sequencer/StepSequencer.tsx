@@ -5,21 +5,18 @@ import { useAudioEngine } from '../../hooks/useAudioEngine';
 import { DRUM_SOUNDS } from '../../data/drumKit';
 
 export const StepSequencer = memo(function StepSequencer() {
-  const { getCurrentPattern, toggleStep } = usePatternStore();
+  const { getCurrentPattern, cycleStep } = usePatternStore();
   const { currentStep, state } = useTransportStore();
   const { triggerDrum, initialize } = useAudioEngine();
   const pattern = getCurrentPattern();
   const isPlaying = state === 'playing';
 
   const handleToggle = useCallback(
-    async (drumId: string, stepIndex: number, isActive: boolean, velocity: number) => {
+    async (drumId: string, stepIndex: number) => {
       await initialize();
-      toggleStep(drumId, stepIndex);
-      if (!isActive) {
-        triggerDrum(drumId, velocity);
-      }
+      cycleStep(drumId, stepIndex);
     },
-    [toggleStep, triggerDrum, initialize]
+    [cycleStep, initialize]
   );
 
   const handlePadHit = useCallback(
@@ -83,7 +80,8 @@ export const StepSequencer = memo(function StepSequencer() {
                   isCurrentStep={isPlaying && currentStep === index}
                   stepIndex={index}
                   color={sound.color}
-                  onToggle={() => handleToggle(sound.id, index, step.active, step.velocity)}
+                  velocity={step.velocity}
+                  onToggle={() => handleToggle(sound.id, index)}
                 />
               ))}
             </div>

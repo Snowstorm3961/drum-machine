@@ -5,7 +5,7 @@ import { SynthSequencer } from './SynthSequencer';
 import { Button } from '../ui/Button';
 
 export const SynthSection = memo(function SynthSection() {
-  const { synths, selectedSynthIndex, setSelectedSynth, synthsEnabled, setSynthsEnabled, clearPattern } =
+  const { synths, selectedSynthIndex, setSelectedSynth, synthsEnabled, setSynthsEnabled, clearPattern, transposeCurrentPattern } =
     useSynthStore();
   const [showControls, setShowControls] = useState(true);
 
@@ -72,7 +72,24 @@ export const SynthSection = memo(function SynthSection() {
             </div>
           )}
 
-          {/* Piano roll sequencer */}
+          {/* Transpose controls + Piano roll sequencer */}
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs text-[var(--color-text-secondary)]">Transpose</span>
+            <button
+              onClick={() => transposeCurrentPattern(selectedSynthIndex, -1)}
+              className="w-7 h-7 flex items-center justify-center rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)] hover:bg-[var(--color-bg-primary)] text-sm font-bold"
+              title="Transpose down 1 semitone"
+            >
+              -
+            </button>
+            <button
+              onClick={() => transposeCurrentPattern(selectedSynthIndex, 1)}
+              className="w-7 h-7 flex items-center justify-center rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)] hover:bg-[var(--color-bg-primary)] text-sm font-bold"
+              title="Transpose up 1 semitone"
+            >
+              +
+            </button>
+          </div>
           <div className="border border-[var(--color-bg-tertiary)] rounded-lg overflow-hidden">
             <SynthSequencer synthIndex={selectedSynthIndex} />
           </div>
