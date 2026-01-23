@@ -3,6 +3,9 @@ import { Recorder } from './Recorder';
 import { DrumKit } from '../instruments/DrumKit';
 import { Synth3xOsc } from '../instruments/Synth3xOsc';
 import type { Step, SynthSettings, SynthPattern, AllDrumParams } from '../../types';
+import { useSequenceStore, type InstrumentId } from '../../store/sequenceStore';
+import { usePatternStore } from '../../store/patternStore';
+import { useSynthStore } from '../../store/synthStore';
 
 type StepCallback = (step: number) => void;
 type RecordingCallback = (isRecording: boolean) => void;
@@ -28,6 +31,7 @@ export class AudioEngine {
 
   // Track active notes for proper note-off handling
   private activeNotes: Map<string, { note: number; step: number }[]> = new Map();
+  private lastStep: number = -1;
 
   private constructor() {}
 
@@ -146,8 +150,33 @@ export class AudioEngine {
   }
 
   private onStep(time: number, step: number): void {
-    // Trigger drums for this step based on pattern
-    this.currentDrumPattern.forEach((steps, drumId) => {
+    let seqState = useSequenceStore.getState();
+
+    // Detect bar boundary (step wrapped from 15 to 0)
+    if (step === 0 && this.lastStep === 15) {
+      const instruments: InstrumentId[] = ['drums', 'synth-1', 'synth-2', 'synth-3'];
+      for (const id of instruments) {
+        if (seqState.modes[id] === 'sequence') {
+          const activeId = seqState.activeSequenceIds[id];
+          const cuedId = seqState.cuedSequenceIds[id];
+          if (!activeId && cuedId) {
+            // No active sequence but one is cued: activate it now
+            seqState.setActiveSequence(id, cuedId);
+            seqState.setCuedSequence(id, null);
+          } else if (activeId) {
+            // Advance the active sequence position
+            seqState.advanceSequencePosition(id);
+          }
+        }
+      }
+      // Re-read state after advancing positions so pattern resolution uses the new position
+      seqState = useSequenceStore.getState();
+    }
+    this.lastStep = step;
+
+    // Resolve drum pattern for this step
+    const drumPattern = this.resolveDrumPattern(seqState);
+    drumPattern.forEach((steps, drumId) => {
       const stepData = steps[step];
       if (stepData && stepData.active) {
         this.drumKit?.triggerDrum(drumId, time, stepData.velocity);
@@ -156,15 +185,18 @@ export class AudioEngine {
 
     // Trigger synths for this step
     if (this.synthsEnabled) {
-      this.currentSynthPatterns.forEach((pattern, synthIndex) => {
+      for (let synthIndex = 0; synthIndex < this.synths.length; synthIndex++) {
         const synth = this.synths[synthIndex];
-        if (!synth || !pattern) return;
+        if (!synth) continue;
+
+        const pattern = this.resolveSynthPattern(synthIndex, seqState);
+        if (!pattern) continue;
 
         const stepData = pattern.steps[step];
         const synthId = synth.id;
         const activeNotesForSynth = this.activeNotes.get(synthId) || [];
 
-        // Get notes for this step (support both legacy single note and new notes array)
+        // Get notes for this step
         const stepNotes: number[] = stepData.notes && stepData.notes.length > 0
           ? stepData.notes
           : (stepData.note !== undefined ? [stepData.note] : []);
@@ -176,7 +208,6 @@ export class AudioEngine {
           const nextStepNotes: number[] = nextStepData.notes && nextStepData.notes.length > 0
             ? nextStepData.notes
             : (nextStepData.note !== undefined ? [nextStepData.note] : []);
-          // Release if we've moved past, or next step doesn't have this note
           return step === nextStep && !nextStepNotes.includes(n.note);
         });
 
@@ -184,32 +215,75 @@ export class AudioEngine {
           synth.noteOff(n.note, time);
         });
 
-        // Update active notes - remove released ones
         const remainingNotes = activeNotesForSynth.filter(
           (n) => !notesToRelease.some((r) => r.note === n.note && r.step === n.step)
         );
 
-        // Trigger new notes if step is active
         if (stepData && stepData.active && stepNotes.length > 0) {
           stepNotes.forEach((note) => {
-            // Check if this exact note is already playing
             const isAlreadyPlaying = remainingNotes.some((n) => n.note === note);
-
             if (!isAlreadyPlaying) {
               synth.noteOn(note, stepData.velocity, time);
               remainingNotes.push({ note, step });
+            } else {
+              // Update step for legato notes so the release check targets the correct next step
+              const existing = remainingNotes.find((n) => n.note === note);
+              if (existing) existing.step = step;
             }
           });
         }
 
         this.activeNotes.set(synthId, remainingNotes);
-      });
+      }
     }
 
     // Notify UI of current step
     if (this.stepCallback) {
       this.stepCallback(step);
     }
+  }
+
+  private resolveDrumPattern(seqState: ReturnType<typeof useSequenceStore.getState>): Map<string, Step[]> {
+    if (seqState.modes.drums === 'pattern') {
+      return this.currentDrumPattern;
+    }
+
+    // Sequence mode: resolve from patternStore
+    const activeSeqId = seqState.activeSequenceIds.drums;
+    if (!activeSeqId) return this.currentDrumPattern;
+    const seq = seqState.sequences.drums.find((s) => s.id === activeSeqId);
+    if (!seq || seq.patternIds.length === 0) return this.currentDrumPattern;
+
+    const pos = seqState.sequencePositions.drums;
+    const patternIndex = seq.patternIds[pos % seq.patternIds.length];
+    const patternStore = usePatternStore.getState();
+    const pattern = patternStore.patterns[patternIndex];
+    if (!pattern) return this.currentDrumPattern;
+
+    const map = new Map<string, Step[]>();
+    pattern.tracks.forEach((track) => {
+      map.set(track.trackId, track.steps);
+    });
+    return map;
+  }
+
+  private resolveSynthPattern(synthIndex: number, seqState: ReturnType<typeof useSequenceStore.getState>): SynthPattern | null {
+    const instrumentId = `synth-${synthIndex + 1}` as InstrumentId;
+
+    if (seqState.modes[instrumentId] === 'pattern') {
+      return this.currentSynthPatterns[synthIndex] || null;
+    }
+
+    // Sequence mode: resolve from synthStore
+    const activeSeqId = seqState.activeSequenceIds[instrumentId];
+    if (!activeSeqId) return this.currentSynthPatterns[synthIndex] || null;
+    const seq = seqState.sequences[instrumentId].find((s) => s.id === activeSeqId);
+    if (!seq || seq.patternIds.length === 0) return this.currentSynthPatterns[synthIndex] || null;
+
+    const pos = seqState.sequencePositions[instrumentId];
+    const patternIndex = seq.patternIds[pos % seq.patternIds.length];
+    const synthState = useSynthStore.getState();
+    return synthState.patterns[synthIndex]?.[patternIndex] || null;
   }
 
   setStepCallback(callback: StepCallback | null): void {
@@ -289,6 +363,9 @@ export class AudioEngine {
 
   stop(): void {
     this.scheduler?.stop();
+    this.lastStep = -1;
+    // Reset all sequence positions to beginning
+    useSequenceStore.getState().resetAllPositions();
     // Release all synth notes
     const now = this.audioContext?.currentTime || 0;
     this.synths.forEach((synth) => {
